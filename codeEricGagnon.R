@@ -1,8 +1,10 @@
 # code workspace - eric gagnon
 
-Sys.setenv(MAKE = 'make -j 8')
+# Setup ##############################################################################
 #devtools::install_github("hadley/dplyr")
 #devtools::install_github("mdsumner/spdplyr")
+config <- quote({
+Sys.setenv(MAKE = 'make -j 8')
 library(MASS)
 library(tidyverse)
 library(dplyr)
@@ -21,7 +23,11 @@ library(epitools)
 library(broom)
 library(lme4)
 library(sjPlot)
-################################################################################################
+library(parallel)
+library(car)
+  })
+eval( config )
+# Load & Prep Data #######################################################################################
 
 # Shot Dataset
   d.shots <- 
@@ -120,8 +126,10 @@ d %<>%
    ) ] %>% 
   .[ ShotType == "2" , ShotTypeDistFactor := tmp.2pt.dist.clusters ] %>% 
   .[ ShotType == "3" , ShotTypeDistFactor := tmp.3pt.dist.clusters ] %>% 
-  .[ , ShotDistFactor := tmp.dist.clusters ]
-
+  .[ , ShotDistFactor := tmp.dist.clusters ] %>% 
+  .[ ShotDistance < 13 , ShotDistanceClass := factor( 'Close (<13ft)')] %>% 
+  .[ ShotDistance >= 13 , ShotDistanceClass := factor( 'Far (>=13ft)')] %>% 
+  .[ , PositionDistClass := factor( paste0( Position , ' - ' , ShotDistanceClass ) ) ]
 #Cleanup
 rm( d.players , d.shots , tmp.dist.clusters , tmp.2pt.dist.clusters , tmp.3pt.dist.clusters )
 
@@ -179,36 +187,136 @@ d %>%
   { ggplot( . , aes( value , colour = Scored , group = Scored ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
   ggplotly
 
+d %>% 
+  .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , 
+          Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock , ShotDistanceClass , PositionDistClass ) ] %>% 
+  .[ !is.na( ShotClock ) ] %>% 
+  .[ TouchTime >= 0  ] %>% 
+  melt( id.vars = c('Scored' , 'ShotType' , 'ShotDistanceClass' , 'PositionDistClass' ) ) %>% 
+  .[ , variable := factor( variable ) ] %>% 
+  { ggplot( . , aes( value , colour = ShotDistanceClass , group = ShotDistanceClass ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
+  ggplotly
+
 # Model ############################################################################################
 # https://rstudio-pubs-static.s3.amazonaws.com/33653_57fc7b8e5d484c909b615d8633c01d51.html
 # https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
+save.image( file =  'working.RData' )
 
 # glm 
 
-  m.glm <- 
-      d %>%  
-      .[ !is.na( ShotClock ) , ] %$% 
-      glm( 
-          Scored ~ ShotDistFactor * ClosestDefenderDistance * Player ,
-          family = binomial( link = 'logit' )    
-      )
+  cl <- makeCluster(getOption("cl.cores", { min( detectCores() , 10 ) } ) )
+  l.m.glm <- 
+    parSapply( 
+      cl , 
+      d[ , unique( PositionDistClass ) ] , 
+      function(x) {
+        # prep each environment
+        load( 'working.RData')
+        eval( config )
+        
+        d[ PositionDistClass == x , ] %>%  
+          .[ !is.na( ShotClock ) , ] %$%
+          glm(
+            Scored ~ ShotDistance * ClosestDefenderDistance ,
+            family = binomial( link = 'logit' )
+          )
+      } , simplify = F , USE.NAMES = T )
+  names( l.m.glm ) <- { d[ , unique( PositionDistClass ) ] }
+  save.image( file =  'working.RData' )  
+  stopCluster( cl )
+  rm( cl )
   
-  m.glm %>% summary
-  m.glm %>% anova
-  m.glm %$% pchisq( deviance , df.residual , lower.tail = F )
-
 # glm with random effects 
 
-  m.glmer <- 
-    d %>%  
-    .[ !is.na( ShotClock ) , ] %$% 
-    glm( 
-      Scored ~ ShotDistFactor * ClosestDefenderDistance + ( 1 | Player ) ,
-      family = binomial( link = 'logit' )    
-    )
+  cl <- makeCluster(getOption("cl.cores", { min( detectCores() , 10 ) } ) )
+  l.m.glmer <- 
+    parSapply( 
+      cl , 
+      d[ , unique( PositionDistClass ) ] , 
+      function(x) {
+        # prep each environment
+        load( 'working.RData')
+        eval( config )
+        
+        d[ PositionDistClass == x , ] %>%  
+          .[ !is.na( ShotClock ) , ] %$% 
+          glmer( 
+            Scored ~ ShotDistance * ClosestDefenderDistance + ( ShotDistance | Player / Game ) ,
+            family = binomial( link = 'logit' ) ,
+            control = glmerControl(optimizer= c( "bobyqa" , "bobyqa" ) , 
+                                   optCtrl=list(maxfun=2e5) )
+          )
+      } , simplify = F )
+  names( l.m.glmer ) <- d[ , unique( PositionDistClass ) ]
+  save.image( file =  'working.RData' )  
+  stopCluster( cl )
+  rm( cl )
   
-  m.glmer %>% summary
-  m.glmer %>% anova
-  #m.glmer %$% pchisq( deviance , df.residual , lower.tail = F )
+  
+# Results & Visuals ############################################################################    
 
+# Plot Fixed Effects
+  l.p.fe <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 'fe' , title = paste0( x , ': Fixed Effects' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.fe) <- paste0( names( l.p.fe ) , ': Fixed Effects' )
 
+# Plot Fixed Effects Slopes  
+  l.p.fe.slope <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 'fe.slope' , title = paste0( x , ': Fixed Effects Slopes' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.fe.slope) <- paste0( names( l.p.fe ) , ': Fixed Effects Slopes' )
+  
+# Plot Random Effects  
+  l.p.re <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 're' , title = paste0( x , ': Random Effects' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.re) <- paste0( names( l.p.fe ) , ': Random Effects' )
+
+# Plot Random Effects QQ    
+  l.p.re.qq <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 're.qq' , title = paste0( x , ': Random Effects QQ Plot' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.re.qq) <- paste0( names( l.p.fe ) , ': Random Effects QQ Plot' )
+  
+# output for each model
+  l.m.summaries <- 
+    l.m.glmer %>% sapply( summary , simplify = F )
+
+# anova for each model 
+  l.m.anovas <- 
+    l.m.glmer %>% sapply( anova , simplify = F )
+
+# data.frame of model results 
+  d.m.results <- 
+    l.m.glmer %>% names %>% sapply( function(x) {
+      data.frame( PositionShotDistClass = x , tidy( l.m.glmer[[x]] ) )
+    } , simplify = F ) %>% 
+      bind_rows() %>% 
+      mutate( 
+        Position = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2})(.*)' , '\\1')} , 
+        ShotDistClass = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2}) - (.*)' , '\\2')}
+      )
+  
+# data.frame of anova results 
+  d.m.anovas <- 
+    l.m.glmer %>% names %>% sapply( function(x) {
+      data.frame( PositionShotDistClass = x , tidy( anova( l.m.glmer[[x]] ) ) )
+    } , simplify = F ) %>% 
+      bind_rows() %>% 
+      mutate( 
+        Position = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2})(.*)' , '\\1')} , 
+        ShotDistClass = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2}) - (.*)' , '\\2')}
+      )
+  
+  save.image( file =  'working.RData' )    
+  
+  

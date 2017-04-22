@@ -145,7 +145,8 @@ d %>%
     geom_density_2d( ) + 
     ggtitle( 'Points Per Shot vs Points Per Game' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
-
+    ggsave( 'output/eda-pps-ppg.svg')
+    
 # Baskets per Shot vs Baskets
 d %>% 
     select( Player , Game , Position , Points , Scored ) %>% 
@@ -156,6 +157,7 @@ d %>%
     geom_density_2d( ) + 
     ggtitle( 'Baskets Per Shot vs Baskets Per Game' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
+    ggsave( 'output/eda-bps-bpg.svg')
 
 # Baskets vs Shots
 d %>% 
@@ -167,6 +169,7 @@ d %>%
     geom_smooth( method = 'loess' ) +
     ggtitle( 'Baskets vs Shots' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
+    ggsave( 'output/eda-baskets-shots.svg')
 
 ## Histograms
 d %>% 
@@ -177,6 +180,7 @@ d %>%
   .[ , variable := factor( variable ) ] %>% 
   { ggplot( . , aes( value , colour = ShotType , group = ShotType ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
   ggplotly
+  ggsave( 'output/eda-hist-by-shot-type.svg')
 
 d %>% 
   .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock ) ] %>% 
@@ -186,6 +190,7 @@ d %>%
   .[ , variable := factor( variable ) ] %>% 
   { ggplot( . , aes( value , colour = Scored , group = Scored ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
   ggplotly
+  ggsave( 'output/eda-hist-by-scored.svg')
 
 d %>% 
   .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , 
@@ -196,6 +201,7 @@ d %>%
   .[ , variable := factor( variable ) ] %>% 
   { ggplot( . , aes( value , colour = ShotDistanceClass , group = ShotDistanceClass ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
   ggplotly
+  ggsave( 'output/eda-hist-by-shot-dist-type.svg')
 
 # Model ############################################################################################
 # https://rstudio-pubs-static.s3.amazonaws.com/33653_57fc7b8e5d484c909b615d8633c01d51.html
@@ -318,5 +324,24 @@ save.image( file =  'working.RData' )
       )
   
   save.image( file =  'working.RData' )    
+  ls() %>% str_subset( 'l.p.' )
+  
+  saveSjPlotList <- function( lp = list() ) {
+     lp %>% names %>% sapply( function(x){
+      lp[[x]]
+      save_plot( filename = paste0( 'output/' , x , '.svg' ) ,
+                 width = 18 ,
+                 height = 12 ,
+                 dpi = 600
+      )
+    } , simplify = F )
+  }
+  
+  saveSjPlotList( l.p.fe)
+  saveSjPlotList( l.p.fe.slope)
+  saveSjPlotList( l.p.re)
+  saveSjPlotList( l.p.re.qq)
+  
+
   
   

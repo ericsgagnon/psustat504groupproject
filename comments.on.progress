@@ -1,6 +1,0 @@
-I've been doing all of my analysis in R.  This is what I have so far.  Do you guys think we should do a train and test set, 
-or just write our report on odds ratios and stuff for the entire data set?
-
-Mostly I've been playing around with the variables after looking at predictors in the full model.
-
-I also ran a lasso model to try to get an idea what subset might be best but I'm not sure if its right or we should include it.

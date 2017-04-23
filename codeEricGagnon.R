@@ -25,6 +25,9 @@ library(lme4)
 library(sjPlot)
 library(parallel)
 library(car)
+library(DescTools)
+library(outliers)
+library(corrgram)
   })
 eval( config )
 # Load & Prep Data #######################################################################################
@@ -113,6 +116,7 @@ d %<>%
     .[ , .( 
       Points = PTS , 
       Scored , 
+      ShotResult = factor( SHOT_RESULT ) ,
       Game = as.factor(GAME_ID) , 
       Player = as.factor( player_name) , 
       Position = as.factor(Pos) , 
@@ -127,15 +131,17 @@ d %<>%
   .[ ShotType == "2" , ShotTypeDistFactor := tmp.2pt.dist.clusters ] %>% 
   .[ ShotType == "3" , ShotTypeDistFactor := tmp.3pt.dist.clusters ] %>% 
   .[ , ShotDistFactor := tmp.dist.clusters ] %>% 
-  .[ ShotDistance < 13 , ShotDistanceClass := factor( 'Close (<13ft)')] %>% 
-  .[ ShotDistance >= 13 , ShotDistanceClass := factor( 'Far (>=13ft)')] %>% 
+  .[ ShotDistance < 15 , ShotDistanceClass := factor( 'Close (<15ft)')] %>% 
+  .[ ShotDistance >= 15 , ShotDistanceClass := factor( 'Far (>=15ft)')] %>% 
   .[ , PositionDistClass := factor( paste0( Position , ' - ' , ShotDistanceClass ) ) ]
+
 #Cleanup
 rm( d.players , d.shots , tmp.dist.clusters , tmp.2pt.dist.clusters , tmp.3pt.dist.clusters )
 
 ## EDA Visuals ########################################################################
 
 # Points per Shot vs Points
+grid.newpage()
 d %>%
     select( Player , Game , Position , Points , Scored ) %>% 
     group_by( Player , Game , Position ) %>% 
@@ -145,9 +151,17 @@ d %>%
     geom_density_2d( ) + 
     ggtitle( 'Points Per Shot vs Points Per Game' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
-    ggsave( 'output/eda-pps-ppg.svg')
+    ggsave( 
+        'eda-pps-ppg.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
     
 # Baskets per Shot vs Baskets
+grid.newpage()
 d %>% 
     select( Player , Game , Position , Points , Scored ) %>% 
     group_by( Player , Game , Position ) %>% 
@@ -157,9 +171,17 @@ d %>%
     geom_density_2d( ) + 
     ggtitle( 'Baskets Per Shot vs Baskets Per Game' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
-    ggsave( 'output/eda-bps-bpg.svg')
-
+    ggsave( 
+        'eda-bps-bpg.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
+    
 # Baskets vs Shots
+grid.newpage()
 d %>% 
     select( Player , Game , Position , Points , Scored ) %>% 
     group_by( Player , Game , Position ) %>% 
@@ -169,39 +191,73 @@ d %>%
     geom_smooth( method = 'loess' ) +
     ggtitle( 'Baskets vs Shots' , subtitle = 'Per Game - By Position')  } %>% 
     ggplotly
-    ggsave( 'output/eda-baskets-shots.svg')
+    ggsave( 
+        'eda-baskets-shots.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
+    
 
 ## Histograms
+grid.newpage()
 d %>% 
-  .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock ) ] %>% 
-  .[ !is.na( ShotClock ) ] %>% 
-  .[ TouchTime >= 0  ] %>% 
-  melt( id.vars = c('Scored' , 'ShotType' ) ) %>% 
-  .[ , variable := factor( variable ) ] %>% 
-  { ggplot( . , aes( value , colour = ShotType , group = ShotType ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
-  ggplotly
-  ggsave( 'output/eda-hist-by-shot-type.svg')
+    .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock ) ] %>% 
+    .[ !is.na( ShotClock ) ] %>% 
+    .[ TouchTime >= 0  ] %>% 
+    melt( id.vars = c('Scored' , 'ShotType' ) ) %>% 
+    .[ , variable := factor( variable ) ] %>% 
+    { ggplot( . , aes( value , colour = ShotType , group = ShotType ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
+    ggplotly
+    ggsave( 
+        'eda-hist-by-shot-type.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
+    
 
+grid.newpage()
 d %>% 
-  .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock ) ] %>% 
-  .[ !is.na( ShotClock ) ] %>% 
-  .[ TouchTime >= 0  ] %>% 
-  melt( id.vars = c('Scored' , 'ShotType' ) ) %>% 
-  .[ , variable := factor( variable ) ] %>% 
-  { ggplot( . , aes( value , colour = Scored , group = Scored ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
-  ggplotly
-  ggsave( 'output/eda-hist-by-scored.svg')
+    .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock ) ] %>% 
+    .[ !is.na( ShotClock ) ] %>% 
+    .[ TouchTime >= 0  ] %>% 
+    melt( id.vars = c('Scored' , 'ShotType' ) ) %>% 
+    .[ , variable := factor( variable ) ] %>% 
+    { ggplot( . , aes( value , colour = Scored , group = Scored ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
+    ggplotly
+    ggsave( 
+        'eda-hist-by-scored.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
+    
 
+grid.newpage()
 d %>% 
-  .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , 
-          Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock , ShotDistanceClass , PositionDistClass ) ] %>% 
-  .[ !is.na( ShotClock ) ] %>% 
-  .[ TouchTime >= 0  ] %>% 
-  melt( id.vars = c('Scored' , 'ShotType' , 'ShotDistanceClass' , 'PositionDistClass' ) ) %>% 
-  .[ , variable := factor( variable ) ] %>% 
-  { ggplot( . , aes( value , colour = ShotDistanceClass , group = ShotDistanceClass ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
-  ggplotly
-  ggsave( 'output/eda-hist-by-shot-dist-type.svg')
+    .[ , .( Scored , ShotType , ShotDistance , ClosestDefenderDistance , ShotClock , 
+            Dribbles = as.numeric( Dribbles ) , TouchTime , GameClock , ShotDistanceClass , PositionDistClass ) ] %>% 
+    .[ !is.na( ShotClock ) ] %>% 
+    .[ TouchTime >= 0  ] %>% 
+    melt( id.vars = c('Scored' , 'ShotType' , 'ShotDistanceClass' , 'PositionDistClass' ) ) %>% 
+    .[ , variable := factor( variable ) ] %>% 
+    { ggplot( . , aes( value , colour = ShotDistanceClass , group = ShotDistanceClass ) ) + facet_wrap(  ~ variable , scales = 'free' ) + geom_histogram( bins = 30 ) } %>% 
+    ggplotly
+    ggsave( 
+        'eda-hist-by-shot-dist-type.png' , 
+        width = 4 , 
+        height = 2.5 ,
+        scale = 2 ,
+        dpi = 300 ,
+        path = 'output/'
+    )
 
 # Model ############################################################################################
 # https://rstudio-pubs-static.s3.amazonaws.com/33653_57fc7b8e5d484c909b615d8633c01d51.html
@@ -209,29 +265,29 @@ d %>%
 save.image( file =  'working.RData' )
 
 # glm 
-
-  cl <- makeCluster(getOption("cl.cores", { min( detectCores() , 10 ) } ) )
-  l.m.glm <- 
-    parSapply( 
-      cl , 
-      d[ , unique( PositionDistClass ) ] , 
-      function(x) {
-        # prep each environment
-        load( 'working.RData')
-        eval( config )
-        
-        d[ PositionDistClass == x , ] %>%  
-          .[ !is.na( ShotClock ) , ] %$%
-          glm(
-            Scored ~ ShotDistance * ClosestDefenderDistance ,
-            family = binomial( link = 'logit' )
-          )
-      } , simplify = F , USE.NAMES = T )
-  names( l.m.glm ) <- { d[ , unique( PositionDistClass ) ] }
-  save.image( file =  'working.RData' )  
-  stopCluster( cl )
-  rm( cl )
-  
+# 
+#   cl <- makeCluster(getOption("cl.cores", { min( detectCores() , 10 ) } ) )
+#   l.m.glm <- 
+#     parSapply( 
+#       cl , 
+#       d[ , unique( PositionDistClass ) ] , 
+#       function(x) {
+#         # prep each environment
+#         load( 'working.RData')
+#         eval( config )
+#         
+#         d[ PositionDistClass == x , ] %>%  
+#           .[ !is.na( ShotClock ) , ] %$%
+#           glm(
+#             Scored ~ ShotDistance * ClosestDefenderDistance ,
+#             family = binomial( link = 'logit' )
+#           )
+#       } , simplify = F , USE.NAMES = T )
+#   names( l.m.glm ) <- { d[ , unique( PositionDistClass ) ] }
+#   save.image( file =  'working.RData' )  
+#   stopCluster( cl )
+#   rm( cl )
+#   
 # glm with random effects 
 
   cl <- makeCluster(getOption("cl.cores", { min( detectCores() , 10 ) } ) )
@@ -247,7 +303,7 @@ save.image( file =  'working.RData' )
         d[ PositionDistClass == x , ] %>%  
           .[ !is.na( ShotClock ) , ] %$% 
           glmer( 
-            Scored ~ ShotDistance * ClosestDefenderDistance + ( ShotDistance | Player / Game ) ,
+            Scored ~ ShotDistance * ClosestDefenderDistance + ( ShotDistance  | Player / Game ) +  ( ClosestDefenderDistance  | Player / Game ) ,
             family = binomial( link = 'logit' ) ,
             control = glmerControl(optimizer= c( "bobyqa" , "bobyqa" ) , 
                                    optCtrl=list(maxfun=2e5) )
@@ -258,41 +314,9 @@ save.image( file =  'working.RData' )
   stopCluster( cl )
   rm( cl )
   
-  
-# Results & Visuals ############################################################################    
+# Results & Visuals ############################################################################
 
-# Plot Fixed Effects
-  l.p.fe <- 
-    l.m.glmer %>% names %>% 
-    sapply( function(x){
-      sjp.glmer( l.m.glmer[[x]] , type = 'fe' , title = paste0( x , ': Fixed Effects' ) , prnt.plot = F )
-      } , simplify = F )
-  names(l.p.fe) <- paste0( names( l.p.fe ) , ': Fixed Effects' )
 
-# Plot Fixed Effects Slopes  
-  l.p.fe.slope <- 
-    l.m.glmer %>% names %>% 
-    sapply( function(x){
-      sjp.glmer( l.m.glmer[[x]] , type = 'fe.slope' , title = paste0( x , ': Fixed Effects Slopes' ) , prnt.plot = F )
-      } , simplify = F )
-  names(l.p.fe.slope) <- paste0( names( l.p.fe ) , ': Fixed Effects Slopes' )
-  
-# Plot Random Effects  
-  l.p.re <- 
-    l.m.glmer %>% names %>% 
-    sapply( function(x){
-      sjp.glmer( l.m.glmer[[x]] , type = 're' , title = paste0( x , ': Random Effects' ) , prnt.plot = F )
-      } , simplify = F )
-  names(l.p.re) <- paste0( names( l.p.fe ) , ': Random Effects' )
-
-# Plot Random Effects QQ    
-  l.p.re.qq <- 
-    l.m.glmer %>% names %>% 
-    sapply( function(x){
-      sjp.glmer( l.m.glmer[[x]] , type = 're.qq' , title = paste0( x , ': Random Effects QQ Plot' ) , prnt.plot = F )
-      } , simplify = F )
-  names(l.p.re.qq) <- paste0( names( l.p.fe ) , ': Random Effects QQ Plot' )
-  
 # output for each model
   l.m.summaries <- 
     l.m.glmer %>% sapply( summary , simplify = F )
@@ -322,26 +346,107 @@ save.image( file =  'working.RData' )
         Position = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2})(.*)' , '\\1')} , 
         ShotDistClass = { str_replace_all( PositionShotDistClass , '([:alpha:]{1,2}) - (.*)' , '\\2')}
       )
+  save.image( file =  'working.RData' )    
+
+# Plot Fixed Effects
+  l.p.fe <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 'fe' , title = paste0( x , ': Fixed Effects' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.fe) <- paste0( names( l.p.fe ) , ': Fixed Effects' )
+
+# Plot Fixed Effects Slopes  
+  l.p.fe.slope <- 
+    l.m.glmer %>% names %>% 
+    sapply( function(x){
+      sjp.glmer( l.m.glmer[[x]] , type = 'fe.slope' , title = paste0( x , ': Fixed Effects Slopes' ) , prnt.plot = F )
+      } , simplify = F )
+  names(l.p.fe.slope) <- paste0( names( l.p.fe.slope ) , ': Fixed Effects Slopes' )
+  
+  # Make combined list of ggplots
+  l.p <- 
+    c(
+      l.p.fe %>% names %>% sapply( function(x){ 
+          l.p.fe[[x]][['plot']]
+      } , simplify = F )
+    ,  
+      l.p.fe.slope %>% names %>% sapply( function(x){ 
+          l.p.fe.slope[[x]][['plot']]
+      } , simplify = F )
+    )
+
+
+  d[ , unique( Position ) ] %>% as.character %>% 
+    sapply( function(x) {
+      l <- list( 
+        { l.p[[ paste0( x , ' - Close (<15ft): Fixed Effects') ]] } ,
+        { l.p[[ paste0( x , ' - Far (>=15ft): Fixed Effects') ]] + 
+            theme( axis.text.y = element_blank() ,
+                   axis.ticks.y = element_blank() )
+        }
+        )
+      
+      grid.newpage()
+      p <- marrangeGrob( l , nrow = 1 , ncol = 2 , top = NULL )
+      ggsave( paste0( x , '-Fixed-Effects.png' ) , 
+              p ,
+              width = 6 , 
+              height = 3 ,
+              scale = 2 ,
+              dpi = 300 ,
+              path = 'output/'
+      )
+      # FE Slopes
+      l <- list( 
+        { l.p[[ paste0( x , ' - Close (<15ft): Fixed Effects Slopes') ]] } ,
+        { l.p[[ paste0( x , ' - Far (>=15ft): Fixed Effects Slopes') ]] + 
+            theme( axis.text.y = element_blank() ,
+                   axis.ticks.y = element_blank() )
+        }
+        )
+      
+      grid.newpage()
+      p <- marrangeGrob( l , nrow = 1 , ncol = 2 , top = NULL )
+      ggsave( paste0( x , '-Fixed-Effects-Slopes.png' ) , 
+              p ,
+              width = 6 , 
+              height = 3 ,
+              scale = 2 ,
+              dpi = 300 ,
+              path = 'output/'
+      )
+      
+    } , simplify = F )
   
   save.image( file =  'working.RData' )    
-  ls() %>% str_subset( 'l.p.' )
   
-  saveSjPlotList <- function( lp = list() ) {
-     lp %>% names %>% sapply( function(x){
-      lp[[x]]
-      save_plot( filename = paste0( 'output/' , x , '.svg' ) ,
-                 width = 18 ,
-                 height = 12 ,
-                 dpi = 600
-      )
-    } , simplify = F )
-  }
   
-  saveSjPlotList( l.p.fe)
-  saveSjPlotList( l.p.fe.slope)
-  saveSjPlotList( l.p.re)
-  saveSjPlotList( l.p.re.qq)
+# Save Tabled Outputs to png  
+  x <- 
+  d.m.results %>% 
+    filter( !is.na( p.value ) ) %>% 
+    select( PositionShotDistClass , Term = term , Estimate = estimate , PValue = p.value , Position , DistanceGroup = ShotDistClass ) %>% 
+    mutate( Estimate = sprintf( '%.3f' , Estimate  ) ) %>% 
+    dcast( DistanceGroup + Term ~ Position , value.var = 'Estimate' )
+  png("estimates.png" , width = 7.6 , height = 2.5 , units = 'in' , res = 100 , pointsize = 6 )
+  p<-tableGrob(x , rows = NULL )
+  grid.arrange(p)
+  dev.off()
   
-
+  x <- 
+    d.m.results %>% 
+    filter( !is.na( p.value ) ) %>% 
+    select( PositionShotDistClass , Term = term , Estimate = estimate , PValue = p.value , Position , DistanceGroup = ShotDistClass ) %>% 
+    mutate( PValue = sprintf( '%.3f' , PValue  ) ) %>% 
+    dcast( DistanceGroup + Term ~ Position , value.var = 'PValue' )
+  png("pvalues.png" , width = 7.6 , height = 2.5 , units = 'in' , res = 100 , pointsize = 6 )
+  p<-tableGrob(x , rows = NULL )
+  grid.arrange(p)
+  dev.off()  
+  
+  
+  
+  
   
   

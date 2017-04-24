@@ -262,6 +262,7 @@ d %>%
 # Model ############################################################################################
 # https://rstudio-pubs-static.s3.amazonaws.com/33653_57fc7b8e5d484c909b615d8633c01d51.html
 # https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
+file.remove( 'working.RData')
 save.image( file =  'working.RData' )
 
 # glm 
@@ -445,8 +446,12 @@ save.image( file =  'working.RData' )
   grid.arrange(p)
   dev.off()  
   
-  
-  
-  
-  
+  save( d , file = 'd.RData' , envir = .GlobalEnv )
+  save( d.m.anovas , file = 'd.m.anovas.RData' , envir = .GlobalEnv )
+  save( d.m.results , file = 'd.m.results.RData' , envir = .GlobalEnv )
+  save( l.m.anovas , file = 'l.m.anovas.RData' , envir = .GlobalEnv )
+  save( l.m.glmer , file = 'l.m.glmer.RData' , envir = .GlobalEnv )
+  save( l.m.summaries , file = 'l.m.summaries.RData' , envir = .GlobalEnv )
+  save( l.p , file = 'l.p.RData' , envir = .GlobalEnv)
+  save( d.m.results , file = 'd.m.results.RData' , envir = .GlobalEnv)
   
